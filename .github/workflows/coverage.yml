@@ -1,0 +1,105 @@
+name: Coverage
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake cmake-extras lcov
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          cd $GITHUB_WORKSPACE
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Profile ../
+          cmake --build . --config Profile -j4
+
+      - name: Test
+        run: |
+          cd $GITHUB_WORKSPACE/build
+          ctest -j4
+
+      - name: Execute lcov
+        run: |
+          cd $GITHUB_WORKSPACE/build
+          lcov --rc geninfo_unexecuted_blocks=1 --capture --directory . --output-file coverage.info --ignore-errors inconsistent --ignore-errors unused --ignore-errors mismatch --ignore-errors parallel --include "$GITHUB_WORKSPACE/src/*" --parallel 4
+
+      - name: Extract lcov metrics to env vars
+        run: |
+          SUMMARY=$(lcov --summary build/coverage.info --ignore-errors format,format --ignore-errors inconsistent,inconsistent)
+
+          echo "=== SUMMARY OUTPUT ==="
+          echo "$SUMMARY"
+          echo "=== END SUMMARY ==="
+
+          if echo "$SUMMARY" | grep "lines" | grep -q "no data found"; then
+            LINES_PERCENT=0
+            LINES_HIT=0
+            LINES_TOTAL=0
+          else
+            LINES_PERCENT=$(echo "$SUMMARY" | grep "lines" | grep -oP '\K[0-9.]+(?=%)')
+            LINES_HIT=$(echo "$SUMMARY" | grep "lines" | grep -oP '\(\K[0-9]+(?= of)')
+            LINES_TOTAL=$(echo "$SUMMARY" | grep "lines" | grep -oP 'of \K[0-9]+(?= lines)')
+          fi
+
+          echo "LCOV_LINES_HIT=$LINES_HIT" >> $GITHUB_ENV
+          echo "LCOV_LINES_TOTAL=$LINES_TOTAL" >> $GITHUB_ENV
+          echo "LCOV_LINES_PERCENT=$LINES_PERCENT" >> $GITHUB_ENV
+
+          if echo "$SUMMARY" | grep "functions" | grep -q "no data found"; then
+            FUNCTIONS_PERCENT="0"
+            FUNCTIONS_HIT="0"
+            FUNCTIONS_TOTAL="0"
+          else
+            FUNCTIONS_PERCENT=$(echo "$SUMMARY" | grep "functions" | grep -oP '\K[0-9.]+(?=%)')
+            FUNCTIONS_HIT=$(echo "$SUMMARY" | grep "functions" | grep -oP '\(\K[0-9]+(?= of)')
+            FUNCTIONS_TOTAL=$(echo "$SUMMARY" | grep "functions" | grep -oP 'of \K[0-9]+(?= functions)')
+          fi
+
+          echo "LCOV_FUNCTIONS_HIT=$FUNCTIONS_HIT" >> $GITHUB_ENV
+          echo "LCOV_FUNCTIONS_TOTAL=$FUNCTIONS_TOTAL" >> $GITHUB_ENV
+          echo "LCOV_FUNCTIONS_PERCENT=$FUNCTIONS_PERCENT" >> $GITHUB_ENV
+
+          echo "Lines:     $LINES_HIT / $LINES_TOTAL ($LINES_PERCENT%)"
+          echo "Functions: $FUNCTIONS_HIT / $FUNCTIONS_TOTAL ($FUNCTIONS_PERCENT%)"
+
+      - name: Create lines coverage badge
+        uses: schneegans/dynamic-badges-action@v1.8.0
+        with:
+          auth: ${{ secrets.BADGE_GIST_SECRET }}
+          gistID: 94f00e5f5924881793dfda0a598055fd
+          filename: master_coverage_lines_badge.svg
+          label: 'Coverage: Lines'
+          message: ${{ env.LCOV_LINES_HIT }} of ${{ env.LCOV_LINES_TOTAL }} (${{ env.LCOV_LINES_PERCENT }}%)
+          valColorRange: ${{ env.LCOV_LINES_PERCENT }}
+          minColorRange: 0
+          maxColorRange: 100
+
+      - name: Create functions coverage badge
+        uses: schneegans/dynamic-badges-action@v1.8.0
+        with:
+          auth: ${{ secrets.BADGE_GIST_SECRET }}
+          gistID: 94f00e5f5924881793dfda0a598055fd
+          filename: master_coverage_functions_badge.svg
+          label: 'Coverage: Functions'
+          message: ${{ env.LCOV_FUNCTIONS_HIT }} of ${{ env.LCOV_FUNCTIONS_TOTAL }} (${{ env.LCOV_FUNCTIONS_PERCENT }}%)
+          valColorRange: ${{ env.LCOV_FUNCTIONS_PERCENT }}
+          minColorRange: 0
+          maxColorRange: 100
