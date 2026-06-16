@@ -5,6 +5,7 @@ permissions:
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: [ main ]
 
@@ -103,3 +104,13 @@ jobs:
           valColorRange: ${{ env.LCOV_FUNCTIONS_PERCENT }}
           minColorRange: 0
           maxColorRange: 100
+
+      - name: Generate a html coverage report
+        run: genhtml -o html --demangle-cpp -- build/coverage.info
+
+      - name: Upload the coverage report to the workflow's artififacts
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-report
+          path: html
+          retention-days: 5
